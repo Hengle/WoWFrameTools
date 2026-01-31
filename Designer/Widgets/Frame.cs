@@ -6,6 +6,23 @@ using static LuaNET.Lua51.Lua;
 
 namespace WoWFrameTools.Widgets;
 
+/// <summary>
+/// Backdrop information for frame backgrounds
+/// https://warcraft.wiki.gg/wiki/Backdrop
+/// </summary>
+public class BackdropInfo
+{
+    public string? bgFile { get; set; }
+    public string? edgeFile { get; set; }
+    public bool tile { get; set; }
+    public int tileSize { get; set; }
+    public int edgeSize { get; set; }
+    public int insetLeft { get; set; }
+    public int insetRight { get; set; }
+    public int insetTop { get; set; }
+    public int insetBottom { get; set; }
+}
+
 public class Frame : Region
 {
     public readonly HashSet<string> _registeredEvents;
@@ -14,9 +31,22 @@ public class Frame : Region
     public readonly List<Texture> _textures;
     public readonly List<FontString> _fontStrings;
     public readonly List<Line> _lines;
-    
+
     public string? _strata;        // https://warcraft.wiki.gg/wiki/Frame_Strata
+    public int _frameLevel;        // Frame level within strata
     public bool _isMovable;
+    public bool _clipsChildren;
+
+    // Backdrop properties
+    public BackdropInfo? _backdrop;
+    public float _backdropColorR = 1f;
+    public float _backdropColorG = 1f;
+    public float _backdropColorB = 1f;
+    public float _backdropColorA = 1f;
+    public float _backdropBorderColorR = 1f;
+    public float _backdropBorderColorG = 1f;
+    public float _backdropBorderColorB = 1f;
+    public float _backdropBorderColorA = 1f;
 
     public Vector2 relativePoint;
     
@@ -24,10 +54,13 @@ public class Frame : Region
     {
         _registeredEvents = [];
         _registeredForDragButtons = [];
-        
+
         _textures = [];
         _fontStrings = [];
         _lines = [];
+
+        _strata = "MEDIUM";
+        _frameLevel = 1;
     }
     
     // Frame:AbortDrag()
@@ -125,10 +158,19 @@ public class Frame : Region
     /// <returns></returns>
     public int GetFrameLevel()
     {
-        return 1;
+        return _frameLevel;
     }
     
-    // Frame:GetFrameStrata() : strata - Returns the layering strata of the frame.
+    /// <summary>
+    /// https://warcraft.wiki.gg/wiki/API_Frame_GetFrameStrata
+    /// Frame:GetFrameStrata() : strata - Returns the layering strata of the frame.
+    /// </summary>
+    /// <returns></returns>
+    public string GetFrameStrata()
+    {
+        return _strata ?? "MEDIUM";
+    }
+
     // Frame:GetHitRectInsets() : left, right, top, bottom - Returns the insets of the frame's hit rectangle.
     // Frame:GetHyperlinksEnabled() : enabled - Returns true if mouse interaction with hyperlinks on the frame is enabled.
     // Frame:GetID() : id - Returns the frame's numeric identifier.
@@ -220,7 +262,7 @@ public class Frame : Region
     /// <param name="clips"></param>
     public void SetClipsChildren(bool clips)
     {
-        
+        _clipsChildren = clips;
     }
     
     // Frame:SetDontSavePosition(dontSave)
@@ -257,7 +299,7 @@ public class Frame : Region
     /// <param name="frameLevel"></param>
     public void SetFrameLevel(int frameLevel)
     {
-        
+        _frameLevel = frameLevel;
     }
     
     /// <summary>
@@ -328,9 +370,70 @@ public class Frame : Region
     /// <param name="placed"></param>
     public void SetUserPlaced(bool placed)
     {
-        
+
     }
-    
+
+    /// <summary>
+    /// https://warcraft.wiki.gg/wiki/API_Frame_SetBackdrop
+    /// Frame:SetBackdrop(backdrop) - Sets the backdrop of the frame.
+    /// </summary>
+    /// <param name="backdrop">BackdropInfo table or nil to clear</param>
+    public void SetBackdrop(BackdropInfo? backdrop)
+    {
+        _backdrop = backdrop;
+    }
+
+    /// <summary>
+    /// https://warcraft.wiki.gg/wiki/API_Frame_SetBackdropColor
+    /// Frame:SetBackdropColor(r, g, b [, a]) - Sets the color of the frame's backdrop background.
+    /// </summary>
+    public void SetBackdropColor(float r, float g, float b, float a = 1f)
+    {
+        _backdropColorR = r;
+        _backdropColorG = g;
+        _backdropColorB = b;
+        _backdropColorA = a;
+    }
+
+    /// <summary>
+    /// https://warcraft.wiki.gg/wiki/API_Frame_SetBackdropBorderColor
+    /// Frame:SetBackdropBorderColor(r, g, b [, a]) - Sets the color of the frame's backdrop border.
+    /// </summary>
+    public void SetBackdropBorderColor(float r, float g, float b, float a = 1f)
+    {
+        _backdropBorderColorR = r;
+        _backdropBorderColorG = g;
+        _backdropBorderColorB = b;
+        _backdropBorderColorA = a;
+    }
+
+    /// <summary>
+    /// https://warcraft.wiki.gg/wiki/API_Frame_GetBackdrop
+    /// Frame:GetBackdrop() - Returns the backdrop of the frame.
+    /// </summary>
+    public BackdropInfo? GetBackdrop()
+    {
+        return _backdrop;
+    }
+
+    /// <summary>
+    /// https://warcraft.wiki.gg/wiki/API_Frame_GetBackdropColor
+    /// Frame:GetBackdropColor() - Returns the color of the frame's backdrop background.
+    /// </summary>
+    public (float r, float g, float b, float a) GetBackdropColor()
+    {
+        return (_backdropColorR, _backdropColorG, _backdropColorB, _backdropColorA);
+    }
+
+    /// <summary>
+    /// https://warcraft.wiki.gg/wiki/API_Frame_GetBackdropBorderColor
+    /// Frame:GetBackdropBorderColor() - Returns the color of the frame's backdrop border.
+    /// </summary>
+    public (float r, float g, float b, float a) GetBackdropBorderColor()
+    {
+        return (_backdropBorderColorR, _backdropBorderColorG, _backdropBorderColorB, _backdropBorderColorA);
+    }
+
     // Frame:SetUsingParentLevel(usingParentLevel)
     // Frame:SetWindow([window])
     // Frame:StartMoving([alwaysStartFromMouse]) - Begins repositioning the frame via mouse movement.

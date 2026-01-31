@@ -228,7 +228,16 @@ public static class Frame
         lua_pushnumber(L, level);
         return 1;
     }
-    
+
+    public static int internal_GetFrameStrata(lua_State L)
+    {
+        var frame = GetThis(L, 1);
+        var strata = frame?.GetFrameStrata() ?? "MEDIUM";
+
+        lua_pushstring(L, strata);
+        return 1;
+    }
+
     public static int internal_GetNumChildren(lua_State L)
     {
         var frame = GetThis(L, 1);
@@ -603,6 +612,213 @@ public static class Frame
         }
     }
 
+    public static int internal_SetBackdrop(lua_State L)
+    {
+        var frame = GetThis(L, 1);
+        if (frame == null)
+        {
+            return 0;
+        }
+
+        var argc = lua_gettop(L);
+
+        // If nil is passed, clear the backdrop
+        if (argc < 2 || lua_isnil(L, 2) != 0)
+        {
+            frame.SetBackdrop(null);
+            return 0;
+        }
+
+        // Parse the backdrop table
+        if (lua_istable(L, 2) != 0)
+        {
+            var backdrop = new Widgets.BackdropInfo();
+
+            // bgFile
+            lua_pushstring(L, "bgFile");
+            lua_gettable(L, 2);
+            if (lua_isstring(L, -1) != 0)
+                backdrop.bgFile = lua_tostring(L, -1);
+            lua_pop(L, 1);
+
+            // edgeFile
+            lua_pushstring(L, "edgeFile");
+            lua_gettable(L, 2);
+            if (lua_isstring(L, -1) != 0)
+                backdrop.edgeFile = lua_tostring(L, -1);
+            lua_pop(L, 1);
+
+            // tile
+            lua_pushstring(L, "tile");
+            lua_gettable(L, 2);
+            if (lua_isboolean(L, -1) != 0)
+                backdrop.tile = lua_toboolean(L, -1) != 0;
+            lua_pop(L, 1);
+
+            // tileSize
+            lua_pushstring(L, "tileSize");
+            lua_gettable(L, 2);
+            if (lua_isnumber(L, -1) != 0)
+                backdrop.tileSize = (int)lua_tonumber(L, -1);
+            lua_pop(L, 1);
+
+            // edgeSize
+            lua_pushstring(L, "edgeSize");
+            lua_gettable(L, 2);
+            if (lua_isnumber(L, -1) != 0)
+                backdrop.edgeSize = (int)lua_tonumber(L, -1);
+            lua_pop(L, 1);
+
+            // insets table
+            lua_pushstring(L, "insets");
+            lua_gettable(L, 2);
+            if (lua_istable(L, -1) != 0)
+            {
+                lua_pushstring(L, "left");
+                lua_gettable(L, -2);
+                if (lua_isnumber(L, -1) != 0)
+                    backdrop.insetLeft = (int)lua_tonumber(L, -1);
+                lua_pop(L, 1);
+
+                lua_pushstring(L, "right");
+                lua_gettable(L, -2);
+                if (lua_isnumber(L, -1) != 0)
+                    backdrop.insetRight = (int)lua_tonumber(L, -1);
+                lua_pop(L, 1);
+
+                lua_pushstring(L, "top");
+                lua_gettable(L, -2);
+                if (lua_isnumber(L, -1) != 0)
+                    backdrop.insetTop = (int)lua_tonumber(L, -1);
+                lua_pop(L, 1);
+
+                lua_pushstring(L, "bottom");
+                lua_gettable(L, -2);
+                if (lua_isnumber(L, -1) != 0)
+                    backdrop.insetBottom = (int)lua_tonumber(L, -1);
+                lua_pop(L, 1);
+            }
+            lua_pop(L, 1);
+
+            frame.SetBackdrop(backdrop);
+        }
+
+        return 0;
+    }
+
+    public static int internal_SetBackdropColor(lua_State L)
+    {
+        var frame = GetThis(L, 1);
+        if (frame == null)
+        {
+            return 0;
+        }
+
+        var argc = lua_gettop(L);
+        if (argc < 4)
+        {
+            Log.ErrorL(L, "SetBackdropColor requires at least 3 arguments (r, g, b)");
+            return 0;
+        }
+
+        var r = (float)lua_tonumber(L, 2);
+        var g = (float)lua_tonumber(L, 3);
+        var b = (float)lua_tonumber(L, 4);
+        var a = argc >= 5 ? (float)lua_tonumber(L, 5) : 1f;
+
+        frame.SetBackdropColor(r, g, b, a);
+        return 0;
+    }
+
+    public static int internal_SetBackdropBorderColor(lua_State L)
+    {
+        var frame = GetThis(L, 1);
+        if (frame == null)
+        {
+            return 0;
+        }
+
+        var argc = lua_gettop(L);
+        if (argc < 4)
+        {
+            Log.ErrorL(L, "SetBackdropBorderColor requires at least 3 arguments (r, g, b)");
+            return 0;
+        }
+
+        var r = (float)lua_tonumber(L, 2);
+        var g = (float)lua_tonumber(L, 3);
+        var b = (float)lua_tonumber(L, 4);
+        var a = argc >= 5 ? (float)lua_tonumber(L, 5) : 1f;
+
+        frame.SetBackdropBorderColor(r, g, b, a);
+        return 0;
+    }
+
+    public static int internal_GetBackdrop(lua_State L)
+    {
+        var frame = GetThis(L, 1);
+        if (frame == null)
+        {
+            lua_pushnil(L);
+            return 1;
+        }
+
+        var backdrop = frame.GetBackdrop();
+        if (backdrop == null)
+        {
+            lua_pushnil(L);
+            return 1;
+        }
+
+        // Create backdrop table
+        lua_newtable(L);
+
+        if (backdrop.bgFile != null)
+        {
+            lua_pushstring(L, "bgFile");
+            lua_pushstring(L, backdrop.bgFile);
+            lua_settable(L, -3);
+        }
+
+        if (backdrop.edgeFile != null)
+        {
+            lua_pushstring(L, "edgeFile");
+            lua_pushstring(L, backdrop.edgeFile);
+            lua_settable(L, -3);
+        }
+
+        lua_pushstring(L, "tile");
+        lua_pushboolean(L, backdrop.tile ? 1 : 0);
+        lua_settable(L, -3);
+
+        lua_pushstring(L, "tileSize");
+        lua_pushnumber(L, backdrop.tileSize);
+        lua_settable(L, -3);
+
+        lua_pushstring(L, "edgeSize");
+        lua_pushnumber(L, backdrop.edgeSize);
+        lua_settable(L, -3);
+
+        // insets table
+        lua_pushstring(L, "insets");
+        lua_newtable(L);
+        lua_pushstring(L, "left");
+        lua_pushnumber(L, backdrop.insetLeft);
+        lua_settable(L, -3);
+        lua_pushstring(L, "right");
+        lua_pushnumber(L, backdrop.insetRight);
+        lua_settable(L, -3);
+        lua_pushstring(L, "top");
+        lua_pushnumber(L, backdrop.insetTop);
+        lua_settable(L, -3);
+        lua_pushstring(L, "bottom");
+        lua_pushnumber(L, backdrop.insetBottom);
+        lua_settable(L, -3);
+        lua_settable(L, -3);
+
+        return 1;
+    }
+
     public static string GetMetatableName() => "FrameMetaTable";
 
     private static Widgets.Frame? GetThis(lua_State L, int index)
@@ -671,6 +887,7 @@ public static class Frame
         LuaHelpers.RegisterMethod(L, "SetResizeBounds", Internal.Frame.internal_SetResizeBounds);
         LuaHelpers.RegisterMethod(L, "SetFrameLevel", Internal.Frame.internal_SetFrameLevel);
         LuaHelpers.RegisterMethod(L, "GetFrameLevel", Internal.Frame.internal_GetFrameLevel);
+        LuaHelpers.RegisterMethod(L, "GetFrameStrata", Internal.Frame.internal_GetFrameStrata);
         LuaHelpers.RegisterMethod(L, "GetNumChildren", Internal.Frame.internal_GetNumChildren);
         LuaHelpers.RegisterMethod(L, "SetClipsChildren", Internal.Frame.internal_SetClipsChildren);
         LuaHelpers.RegisterMethod(L, "SetUserPlaced", Internal.Frame.internal_SetUserPlaced);
@@ -680,7 +897,11 @@ public static class Frame
         LuaHelpers.RegisterMethod(L, "SetFixedFrameLevel", Internal.Frame.internal_SetFixedFrameLevel);
         LuaHelpers.RegisterMethod(L, "EnableKeyboard", Internal.Frame.internal_EnableKeyboard);
         LuaHelpers.RegisterMethod(L, "SetPropagateKeyboardInput", Internal.Frame.internal_SetPropagateKeyboardInput);
-        
+        LuaHelpers.RegisterMethod(L, "SetBackdrop", Internal.Frame.internal_SetBackdrop);
+        LuaHelpers.RegisterMethod(L, "SetBackdropColor", Internal.Frame.internal_SetBackdropColor);
+        LuaHelpers.RegisterMethod(L, "SetBackdropBorderColor", Internal.Frame.internal_SetBackdropBorderColor);
+        LuaHelpers.RegisterMethod(L, "GetBackdrop", Internal.Frame.internal_GetBackdrop);
+
         // 6) pop
         lua_pop(L, 1);
     }

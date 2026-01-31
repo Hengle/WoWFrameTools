@@ -11,21 +11,27 @@ public static class Line
         var line = GetThis(L, 1);
 
         var relativePoint = luaL_checkstring(L, 2);
-        Widgets.Region? relativeTo = null;
-        int offsetX = 0;
-        int offsetY = 0;
-        
-        if (lua_isstring(L, 3) != 0)
+        Widgets.Frame? relativeTo = null;
+        float offsetX = 0;
+        float offsetY = 0;
+
+        int argIndex = 3;
+        // Check if arg 3 is a frame reference or a number
+        if (lua_isnumber(L, argIndex) == 0 && lua_isnil(L, argIndex) == 0)
         {
-            relativeTo = GetThis(L, 2) as Widgets.Region;
-        }
-        else if (lua_isnumber(L, 3) != 0)
-        {
-            offsetX = (int)lua_tonumber(L, 3);
-            offsetY = (int)lua_tonumber(L, 4);
+            // It's a frame reference - use LuaHelpers to get the frame
+            relativeTo = LuaHelpers.GetFrame(L, argIndex);
+            argIndex++;
         }
 
-        line?.SetStartPoint(relativePoint, relativeTo, offsetX, offsetY);
+        // Get offsets if present
+        if (lua_isnumber(L, argIndex) != 0)
+        {
+            offsetX = (float)lua_tonumber(L, argIndex);
+            offsetY = (float)lua_tonumber(L, argIndex + 1);
+        }
+
+        line?.SetEndPoint(relativePoint, relativeTo, offsetX, offsetY);
 
         lua_pushboolean(L, 1);
         return 1;
@@ -37,17 +43,23 @@ public static class Line
 
         var relativePoint = luaL_checkstring(L, 2);
         Widgets.Region? relativeTo = null;
-        int offsetX = 0;
-        int offsetY = 0;
-        
-        if (lua_isstring(L, 3) != 0)
+        float offsetX = 0;
+        float offsetY = 0;
+
+        int argIndex = 3;
+        // Check if arg 3 is a frame reference or a number
+        if (lua_isnumber(L, argIndex) == 0 && lua_isnil(L, argIndex) == 0)
         {
-            relativeTo = GetThis(L, 2) as Widgets.Region;
+            // It's a frame/region reference - use LuaHelpers to get the frame
+            relativeTo = LuaHelpers.GetFrame(L, argIndex) as Widgets.Region;
+            argIndex++;
         }
-        else if (lua_isnumber(L, 3) != 0)
+
+        // Get offsets if present
+        if (lua_isnumber(L, argIndex) != 0)
         {
-            offsetX = (int)lua_tonumber(L, 3);
-            offsetY = (int)lua_tonumber(L, 4);
+            offsetX = (float)lua_tonumber(L, argIndex);
+            offsetY = (float)lua_tonumber(L, argIndex + 1);
         }
 
         line?.SetStartPoint(relativePoint, relativeTo, offsetX, offsetY);

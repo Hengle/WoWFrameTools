@@ -9,10 +9,64 @@ namespace WoWFrameTools.Widgets;
 /// </summary>
 public class FontString : Region, IFontInstance
 {
+    // Text content
+    protected string? _text { get; set; }
+
+    // Font properties
+    protected string? _fontPath { get; set; }
+    protected float _fontSize { get; set; } = 12f;
+    protected string? _fontFlags { get; set; }
+
+    // Text color
+    protected float _textColorR { get; set; } = 1.0f;
+    protected float _textColorG { get; set; } = 1.0f;
+    protected float _textColorB { get; set; } = 1.0f;
+    protected float _textColorA { get; set; } = 1.0f;
+
+    // Shadow
+    protected float _shadowColorR { get; set; }
+    protected float _shadowColorG { get; set; }
+    protected float _shadowColorB { get; set; }
+    protected float _shadowColorA { get; set; }
+    protected float _shadowOffsetX { get; set; }
+    protected float _shadowOffsetY { get; set; }
+
+    // Justification
+    protected string _justifyH { get; set; } = "CENTER";
+    protected string _justifyV { get; set; } = "MIDDLE";
+
+    // Max lines
+    protected int _maxLines { get; set; }
+
     public FontString(string? name = null, string? drawLayer = null, string? templateName = null, Frame? parent = null)
         : base("FontString", name, drawLayer, parent)
     {
     }
+
+    /// <summary>
+    /// Gets the text content
+    /// </summary>
+    public string? GetText() => _text;
+
+    /// <summary>
+    /// Gets the text color
+    /// </summary>
+    public (float r, float g, float b, float a) GetTextColor() => (_textColorR, _textColorG, _textColorB, _textColorA);
+
+    /// <summary>
+    /// Gets the horizontal justification
+    /// </summary>
+    public string GetJustifyH() => _justifyH;
+
+    /// <summary>
+    /// Gets the vertical justification
+    /// </summary>
+    public string GetJustifyV() => _justifyV;
+
+    /// <summary>
+    /// Gets font properties
+    /// </summary>
+    public (string? path, float size, string? flags) GetFont() => (_fontPath, _fontSize, _fontFlags);
     
     // FontString:CalculateScreenAreaFromCharacterSpan(leftIndex, rightIndex) : areas
     // FontString:CanNonSpaceWrap() : wrap
@@ -52,9 +106,9 @@ public class FontString : Region, IFontInstance
     /// FontString:SetText([text])
     /// </summary>
     /// <param name="text"></param>
-    public void SetText(string text)
+    public void SetText(string? text)
     {
-        
+        _text = text;
     }
     
     // FontString:SetTextHeight(height)
@@ -81,8 +135,11 @@ public class FontString : Region, IFontInstance
     /// <param name="height"></param>
     /// <param name="flags"></param>
     /// <returns></returns>
-    public bool SetFont(string? fontFile, int height, string? flags)
+    public bool SetFont(string? fontFile, float height, string? flags)
     {
+        _fontPath = fontFile;
+        _fontSize = height;
+        _fontFlags = flags;
         return true;
     }
     
@@ -96,9 +153,9 @@ public class FontString : Region, IFontInstance
     /// <param name="justify"></param>
     public void SetJustifyH(string justify)
     {
-        
+        _justifyH = justify;
     }
-    
+
     /// <summary>
     /// https://warcraft.wiki.gg/wiki/API_FontInstance_SetJustifyV
     /// FontInstance:SetJustifyV(justifyV) - Sets the vertical text justification.
@@ -106,6 +163,38 @@ public class FontString : Region, IFontInstance
     /// <param name="justify"></param>
     public void SetJustifyV(string justify)
     {
+        _justifyV = justify;
+    }
+
+    /// <summary>
+    /// https://warcraft.wiki.gg/wiki/API_FontInstance_SetShadowColor
+    /// FontInstance:SetShadowColor(colorR, colorG, colorB [, a]) - Sets the text shadow color.
+    /// </summary>
+    public void SetShadowColor(float colorR, float colorG, float colorB, float colorA = 1.0f)
+    {
+        _shadowColorR = colorR;
+        _shadowColorG = colorG;
+        _shadowColorB = colorB;
+        _shadowColorA = colorA;
+    }
+
+    /// <summary>
+    /// https://warcraft.wiki.gg/wiki/API_FontInstance_SetShadowOffset
+    /// FontInstance:SetShadowOffset(offsetX, offsetY) - Sets the text shadow offset.
+    /// </summary>
+    public void SetShadowOffset(float offsetX, float offsetY)
+    {
+        _shadowOffsetX = offsetX;
+        _shadowOffsetY = offsetY;
+    }
+
+    /// <summary>
+    /// https://warcraft.wiki.gg/wiki/API_FontString_SetMaxLines
+    /// FontString:SetMaxLines(maxLines) - Sets the maximum number of lines.
+    /// </summary>
+    public void SetMaxLines(int maxLines)
+    {
+        _maxLines = maxLines;
     }
     
     // FontInstance:SetShadowColor(colorR, colorG, colorB [, a]) - Returns the color of text shadow.
@@ -120,8 +209,12 @@ public class FontString : Region, IFontInstance
     /// <param name="colorG"></param>
     /// <param name="colorB"></param>
     /// <param name="colorA"></param>
-    public void SetTextColor(float colorR, float colorG, float colorB, float colorA)
+    public void SetTextColor(float colorR, float colorG, float colorB, float colorA = 1.0f)
     {
+        _textColorR = colorR;
+        _textColorG = colorG;
+        _textColorB = colorB;
+        _textColorA = colorA;
     }
     
     public override string ToString()

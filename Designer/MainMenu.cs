@@ -28,17 +28,6 @@ public class MainMenu
                     new Item("Copy", null),
                     new Item("Paste", null)
                 ]),
-                new SubMenuItem("View", 
-                [
-                    new Item("Toolbox", null),
-                    new Item("World Manager", null),
-                    new Item("Data Manager", ToggleDataManager)
-                ]),
             ]));
-    }
-    
-    private void ToggleDataManager()
-    {
-
     }
 }

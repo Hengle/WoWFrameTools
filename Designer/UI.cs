@@ -16,8 +16,32 @@ public class UI
     private readonly List<Menu> _menus;
     private readonly MainMenu? _mainMenu;
     private string _layoutFilePath = "imgui_layout.ini";
-    private ScriptObject _selectedFrame;
+    private ScriptObject? _selectedFrame;
     private bool _showDemoWindow = false;
+
+    // Strata ordering (lowest to highest)
+    private static readonly Dictionary<string, int> StrataOrder = new()
+    {
+        { "WORLD", 0 },
+        { "BACKGROUND", 1 },
+        { "LOW", 2 },
+        { "MEDIUM", 3 },
+        { "HIGH", 4 },
+        { "DIALOG", 5 },
+        { "FULLSCREEN", 6 },
+        { "FULLSCREEN_DIALOG", 7 },
+        { "TOOLTIP", 8 }
+    };
+
+    // Draw layer ordering within a frame (lowest to highest)
+    private static readonly Dictionary<string, int> DrawLayerOrder = new()
+    {
+        { "BACKGROUND", 0 },
+        { "BORDER", 1 },
+        { "ARTWORK", 2 },
+        { "OVERLAY", 3 },
+        { "HIGHLIGHT", 4 }
+    };
 
     public UI(Designer designer)
     {
@@ -172,190 +196,627 @@ public class UI
         ImGui.Begin("Addon");
 
         _gl.Enable(EnableCap.Blend);
-        _gl.BlendFunc(BlendingFactor.SrcAlpha, BlendingFactor.One);
-        
+        _gl.BlendFunc(BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha);
+
         // Get the current window's draw list
         var drawList = ImGui.GetWindowDrawList();
 
-        // Define the rectangle's position and size
-        var windowPos = ImGui.GetWindowPos(); // Top-left corner of the window
-        var windowSize = ImGui.GetWindowSize(); // Size of the window
-        
-        DrawFrame(API.UIObjects.UIParent, drawList, windowPos);
-        
+        // Get the content region (excluding title bar)
+        var windowPos = ImGui.GetWindowPos();
+        var cursorPos = ImGui.GetCursorScreenPos();
+        var contentSize = ImGui.GetContentRegionAvail();
+
+        // UIParent represents the full addon viewport
+        if (API.UIObjects.UIParent != null)
+        {
+            // Set UIParent's size to match the content area
+            API.UIObjects.UIParent._width = contentSize.X;
+            API.UIObjects.UIParent._height = contentSize.Y;
+            API.UIObjects.UIParent._computedX = cursorPos.X;
+            API.UIObjects.UIParent._computedY = cursorPos.Y;
+            API.UIObjects.UIParent._computedWidth = contentSize.X;
+            API.UIObjects.UIParent._computedHeight = contentSize.Y;
+            API.UIObjects.UIParent._layoutDirty = false;
+        }
+
+        // Collect all frames and sort by strata/level
+        var sortedFrames = CollectAndSortFrames(API.UIObjects.UIParent);
+
+        // Compute layout for all frames
+        foreach (var frame in sortedFrames)
+        {
+            ComputeFrameLayout(frame, cursorPos);
+        }
+
+        // Draw frames in sorted order
+        foreach (var frame in sortedFrames)
+        {
+            DrawFrame(frame, drawList);
+        }
+
         ImGui.End();
-        
-        _gl.BlendFunc(BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha);
     }
 
-    private void DrawFrame(Frame? frame, ImDrawListPtr drawList, Vector2 windowPos)
+    /// <summary>
+    /// Collects all frames recursively and sorts them by strata and level
+    /// </summary>
+    private List<Frame> CollectAndSortFrames(Frame? root)
     {
-        if (frame == null)
-            return;
-        
-        var points = frame._points;
+        var frames = new List<Frame>();
+        CollectFramesRecursive(root, frames);
 
-        Vector2 refPos = Vector2.Zero;
-        
-        if (frame._parent == null)
+        // Sort by strata, then by level
+        frames.Sort((a, b) =>
         {
-            refPos = windowPos;
+            int strataA = GetStrataOrder(a._strata);
+            int strataB = GetStrataOrder(b._strata);
+            if (strataA != strataB) return strataA.CompareTo(strataB);
+            return a._frameLevel.CompareTo(b._frameLevel);
+        });
+
+        return frames;
+    }
+
+    private void CollectFramesRecursive(Frame? frame, List<Frame> frames)
+    {
+        if (frame == null) return;
+
+        frames.Add(frame);
+
+        foreach (var child in frame.GetChildren())
+        {
+            if (child is Frame childFrame)
+            {
+                CollectFramesRecursive(childFrame, frames);
+            }
+        }
+    }
+
+    private int GetStrataOrder(string? strata)
+    {
+        if (strata == null) return StrataOrder["MEDIUM"];
+        return StrataOrder.TryGetValue(strata.ToUpper(), out var order) ? order : StrataOrder["MEDIUM"];
+    }
+
+    private int GetDrawLayerOrder(string? layer)
+    {
+        if (layer == null) return DrawLayerOrder["ARTWORK"];
+        return DrawLayerOrder.TryGetValue(layer.ToUpper(), out var order) ? order : DrawLayerOrder["ARTWORK"];
+    }
+
+    /// <summary>
+    /// Computes the absolute position and size of a frame based on its anchors
+    /// </summary>
+    private void ComputeFrameLayout(Frame frame, Vector2 containerOffset)
+    {
+        if (!frame._layoutDirty && frame._computedWidth > 0) return;
+
+        // Get parent's computed rect
+        float parentX, parentY, parentWidth, parentHeight;
+        if (frame._parent is ScriptRegion parentRegion)
+        {
+            parentX = parentRegion._computedX;
+            parentY = parentRegion._computedY;
+            parentWidth = parentRegion._computedWidth;
+            parentHeight = parentRegion._computedHeight;
         }
         else
         {
-            refPos = (frame._parent as Frame).relativePoint;
+            // No parent, use container
+            parentX = containerOffset.X;
+            parentY = containerOffset.Y;
+            parentWidth = API.UIObjects.UIParent?._computedWidth ?? 800;
+            parentHeight = API.UIObjects.UIParent?._computedHeight ?? 600;
         }
-        
-        var (rectStart, rectEnd) = CalculateRect(frame);
-        
-        // Draw the rectangle
-        drawList.AddRectFilled(
-            rectStart,          // Top-left corner
-            rectEnd,            // Bottom-right corner
-            ImGui.GetColorU32(new Vector4(0f, 1.0f, 0f, 0.1f)) // Color (RGBA)
-        );
 
-        if (frame?.GetNumChildren() > 0)
+        // If no anchor points, position at parent's top-left
+        if (frame._points.Count == 0)
         {
-            var children = frame?.GetChildren();
-            
-            foreach (var child in children)
+            frame._computedX = parentX;
+            frame._computedY = parentY;
+            frame._computedWidth = frame._width > 0 ? frame._width : parentWidth;
+            frame._computedHeight = frame._height > 0 ? frame._height : parentHeight;
+            frame._layoutDirty = false;
+            return;
+        }
+
+        // Calculate position from anchors
+        float? left = null, right = null, top = null, bottom = null;
+        float? centerX = null, centerY = null;
+
+        foreach (var kvp in frame._points)
+        {
+            var anchorPoint = kvp.Key.ToUpper();
+            var point = kvp.Value;
+
+            // Get the relativeTo frame (or parent if null)
+            float refX, refY, refWidth, refHeight;
+            if (point.relativeTo != null)
             {
-                DrawFrame(child as Frame, drawList, windowPos);
+                refX = point.relativeTo._computedX;
+                refY = point.relativeTo._computedY;
+                refWidth = point.relativeTo._computedWidth;
+                refHeight = point.relativeTo._computedHeight;
+            }
+            else
+            {
+                refX = parentX;
+                refY = parentY;
+                refWidth = parentWidth;
+                refHeight = parentHeight;
+            }
+
+            // Get the position of the relative point on the reference frame
+            var relPoint = (point.relativePoint ?? anchorPoint).ToUpper();
+            var (refPointX, refPointY) = GetAnchorPosition(refX, refY, refWidth, refHeight, relPoint);
+
+            // Apply offset
+            float targetX = refPointX + point.offsetX;
+            float targetY = refPointY + point.offsetY;
+
+            // Store the constraint based on anchor point type
+            switch (anchorPoint)
+            {
+                case "TOPLEFT":
+                    left = targetX;
+                    top = targetY;
+                    break;
+                case "TOP":
+                    centerX = targetX;
+                    top = targetY;
+                    break;
+                case "TOPRIGHT":
+                    right = targetX;
+                    top = targetY;
+                    break;
+                case "LEFT":
+                    left = targetX;
+                    centerY = targetY;
+                    break;
+                case "CENTER":
+                    centerX = targetX;
+                    centerY = targetY;
+                    break;
+                case "RIGHT":
+                    right = targetX;
+                    centerY = targetY;
+                    break;
+                case "BOTTOMLEFT":
+                    left = targetX;
+                    bottom = targetY;
+                    break;
+                case "BOTTOM":
+                    centerX = targetX;
+                    bottom = targetY;
+                    break;
+                case "BOTTOMRIGHT":
+                    right = targetX;
+                    bottom = targetY;
+                    break;
+            }
+        }
+
+        // Resolve the final position and size
+        float frameWidth = frame._width;
+        float frameHeight = frame._height;
+
+        // If we have both left and right, compute width from them
+        if (left.HasValue && right.HasValue)
+        {
+            frameWidth = right.Value - left.Value;
+        }
+        // If we have both top and bottom, compute height from them
+        if (top.HasValue && bottom.HasValue)
+        {
+            frameHeight = bottom.Value - top.Value;
+        }
+
+        // Use explicit size if anchors don't define it
+        if (frameWidth <= 0) frameWidth = frame._width > 0 ? frame._width : 100;
+        if (frameHeight <= 0) frameHeight = frame._height > 0 ? frame._height : 100;
+
+        // Compute final X position
+        float finalX;
+        if (left.HasValue)
+        {
+            finalX = left.Value;
+        }
+        else if (right.HasValue)
+        {
+            finalX = right.Value - frameWidth;
+        }
+        else if (centerX.HasValue)
+        {
+            finalX = centerX.Value - frameWidth / 2;
+        }
+        else
+        {
+            finalX = parentX;
+        }
+
+        // Compute final Y position
+        float finalY;
+        if (top.HasValue)
+        {
+            finalY = top.Value;
+        }
+        else if (bottom.HasValue)
+        {
+            finalY = bottom.Value - frameHeight;
+        }
+        else if (centerY.HasValue)
+        {
+            finalY = centerY.Value - frameHeight / 2;
+        }
+        else
+        {
+            finalY = parentY;
+        }
+
+        frame._computedX = finalX;
+        frame._computedY = finalY;
+        frame._computedWidth = frameWidth;
+        frame._computedHeight = frameHeight;
+        frame._layoutDirty = false;
+    }
+
+    /// <summary>
+    /// Gets the absolute position of an anchor point on a frame
+    /// </summary>
+    private (float x, float y) GetAnchorPosition(float frameX, float frameY, float frameWidth, float frameHeight, string anchorPoint)
+    {
+        return anchorPoint switch
+        {
+            "TOPLEFT" => (frameX, frameY),
+            "TOP" => (frameX + frameWidth / 2, frameY),
+            "TOPRIGHT" => (frameX + frameWidth, frameY),
+            "LEFT" => (frameX, frameY + frameHeight / 2),
+            "CENTER" => (frameX + frameWidth / 2, frameY + frameHeight / 2),
+            "RIGHT" => (frameX + frameWidth, frameY + frameHeight / 2),
+            "BOTTOMLEFT" => (frameX, frameY + frameHeight),
+            "BOTTOM" => (frameX + frameWidth / 2, frameY + frameHeight),
+            "BOTTOMRIGHT" => (frameX + frameWidth, frameY + frameHeight),
+            _ => (frameX, frameY)
+        };
+    }
+
+    /// <summary>
+    /// Draws a frame and its regions
+    /// </summary>
+    private void DrawFrame(Frame frame, ImDrawListPtr drawList)
+    {
+        // Skip invisible frames
+        if (!frame.IsVisible()) return;
+
+        float effectiveAlpha = frame.GetEffectiveAlpha();
+        if (effectiveAlpha <= 0) return;
+
+        var rectStart = new Vector2(frame._computedX, frame._computedY);
+        var rectEnd = new Vector2(frame._computedX + frame._computedWidth, frame._computedY + frame._computedHeight);
+
+        // Draw backdrop if set
+        var backdrop = frame.GetBackdrop();
+        if (backdrop != null)
+        {
+            // Draw backdrop background color
+            var (bgR, bgG, bgB, bgA) = frame.GetBackdropColor();
+            var bgColor = ImGui.GetColorU32(new Vector4(bgR, bgG, bgB, bgA * effectiveAlpha));
+
+            // Apply insets
+            var insetStart = new Vector2(
+                rectStart.X + backdrop.insetLeft,
+                rectStart.Y + backdrop.insetTop);
+            var insetEnd = new Vector2(
+                rectEnd.X - backdrop.insetRight,
+                rectEnd.Y - backdrop.insetBottom);
+
+            drawList.AddRectFilled(insetStart, insetEnd, bgColor);
+
+            // Draw backdrop border if edgeFile is set
+            if (!string.IsNullOrEmpty(backdrop.edgeFile) && backdrop.edgeSize > 0)
+            {
+                var (borderR, borderG, borderB, borderA) = frame.GetBackdropBorderColor();
+                var borderColor = ImGui.GetColorU32(new Vector4(borderR, borderG, borderB, borderA * effectiveAlpha));
+                drawList.AddRect(rectStart, rectEnd, borderColor, 0f, ImDrawFlags.None, backdrop.edgeSize > 0 ? backdrop.edgeSize : 1);
+            }
+        }
+
+        // Draw outline for selected frame
+        if (_selectedFrame == frame)
+        {
+            var selectedColor = ImGui.GetColorU32(new Vector4(1f, 1f, 0f, 0.8f * effectiveAlpha));
+            drawList.AddRect(rectStart, rectEnd, selectedColor, 0f, ImDrawFlags.None, 2f);
+        }
+
+        // Collect and sort regions by draw layer
+        var regions = new List<(Region region, int layerOrder, int subLevel)>();
+
+        foreach (var texture in frame._textures)
+        {
+            if (texture.IsVisible())
+            {
+                regions.Add((texture, GetDrawLayerOrder(texture.GetDrawLayer()), texture.GetSubLevel()));
+            }
+        }
+
+        foreach (var fontString in frame._fontStrings)
+        {
+            if (fontString.IsVisible())
+            {
+                regions.Add((fontString, GetDrawLayerOrder(fontString.GetDrawLayer()), fontString.GetSubLevel()));
+            }
+        }
+
+        foreach (var line in frame._lines)
+        {
+            if (line.IsVisible())
+            {
+                regions.Add((line, GetDrawLayerOrder(line.GetDrawLayer()), line.GetSubLevel()));
+            }
+        }
+
+        // Sort by layer order, then sublevel
+        regions.Sort((a, b) =>
+        {
+            if (a.layerOrder != b.layerOrder) return a.layerOrder.CompareTo(b.layerOrder);
+            return a.subLevel.CompareTo(b.subLevel);
+        });
+
+        // Draw each region
+        foreach (var (region, _, _) in regions)
+        {
+            // Compute region layout relative to parent frame
+            ComputeRegionLayout(region, frame);
+
+            if (region is Widgets.Texture texture)
+            {
+                DrawTexture(texture, drawList, effectiveAlpha);
+            }
+            else if (region is FontString fontString)
+            {
+                DrawFontString(fontString, drawList, effectiveAlpha);
+            }
+            else if (region is Line line)
+            {
+                DrawLine(line, drawList, effectiveAlpha);
             }
         }
     }
 
-    private (Vector2, Vector2) CalculateRect(Frame frame)
+    /// <summary>
+    /// Computes layout for a region (texture, fontstring, line) within its parent frame
+    /// </summary>
+    private void ComputeRegionLayout(Region region, Frame parentFrame)
     {
-        Vector2 rectStart = Vector2.Zero;
-        Vector2 rectEnd = Vector2.Zero;
+        if (!region._layoutDirty && region._computedWidth > 0) return;
 
-        if (frame?._points == null || frame._points.Count == 0)
+        float parentX = parentFrame._computedX;
+        float parentY = parentFrame._computedY;
+        float parentWidth = parentFrame._computedWidth;
+        float parentHeight = parentFrame._computedHeight;
+
+        // If no anchor points, fill parent
+        if (region._points.Count == 0)
         {
-            rectEnd = new Vector2(frame._width, frame._height);
-            return (rectStart, rectEnd);
+            region._computedX = parentX;
+            region._computedY = parentY;
+            region._computedWidth = region._width > 0 ? region._width : parentWidth;
+            region._computedHeight = region._height > 0 ? region._height : parentHeight;
+            region._layoutDirty = false;
+            return;
         }
 
-        if (frame?._points.Count == 1)
+        // Same logic as frame layout
+        float? left = null, right = null, top = null, bottom = null;
+        float? centerX = null, centerY = null;
+
+        foreach (var kvp in region._points)
         {
-            if (frame._points.TryGetValue("TOPLEFT", out var point))
+            var anchorPoint = kvp.Key.ToUpper();
+            var point = kvp.Value;
+
+            float refX, refY, refWidth, refHeight;
+            if (point.relativeTo != null)
             {
-                rectStart = new Vector2(point.offsetX, point.offsetY);
-                rectEnd = new Vector2(frame._width + point.offsetX, frame._height + point.offsetY);
+                refX = point.relativeTo._computedX;
+                refY = point.relativeTo._computedY;
+                refWidth = point.relativeTo._computedWidth;
+                refHeight = point.relativeTo._computedHeight;
             }
-            else if (frame._points.TryGetValue("BOTTOMRIGHT", out point))
+            else
             {
-                rectStart = new Vector2(point.offsetX - frame._width, point.offsetY - frame._height);
-                rectEnd = new Vector2(point.offsetX, point.offsetY);
+                refX = parentX;
+                refY = parentY;
+                refWidth = parentWidth;
+                refHeight = parentHeight;
             }
-            else if (frame._points.TryGetValue("CENTER", out point))
+
+            var relPoint = (point.relativePoint ?? anchorPoint).ToUpper();
+            var (refPointX, refPointY) = GetAnchorPosition(refX, refY, refWidth, refHeight, relPoint);
+
+            float targetX = refPointX + point.offsetX;
+            float targetY = refPointY + point.offsetY;
+
+            switch (anchorPoint)
             {
-                rectStart = new Vector2(point.offsetX - frame._width / 2, point.offsetY - frame._height / 2);
-                rectEnd = new Vector2(point.offsetX + frame._width / 2, point.offsetY + frame._height / 2);
-            }
-            else if (frame._points.TryGetValue("TOPRIGHT", out point))
-            {
-                rectStart = new Vector2(point.offsetX - frame._width, point.offsetY);
-                rectEnd = new Vector2(point.offsetX, point.offsetY + frame._height);
-            }
-            else if (frame._points.TryGetValue("BOTTOMLEFT", out point))
-            {
-                rectStart = new Vector2(point.offsetX, point.offsetY - frame._height);
-                rectEnd = new Vector2(point.offsetX + frame._width, point.offsetY);
+                case "TOPLEFT": left = targetX; top = targetY; break;
+                case "TOP": centerX = targetX; top = targetY; break;
+                case "TOPRIGHT": right = targetX; top = targetY; break;
+                case "LEFT": left = targetX; centerY = targetY; break;
+                case "CENTER": centerX = targetX; centerY = targetY; break;
+                case "RIGHT": right = targetX; centerY = targetY; break;
+                case "BOTTOMLEFT": left = targetX; bottom = targetY; break;
+                case "BOTTOM": centerX = targetX; bottom = targetY; break;
+                case "BOTTOMRIGHT": right = targetX; bottom = targetY; break;
             }
         }
 
-        if (frame?._points.Count == 2)
-        {
-            var points = frame._points;
-            if (points.TryGetValue("TOPLEFT", out var topLeft) && points.TryGetValue("BOTTOMRIGHT", out var bottomRight))
-            {
-                rectStart = new Vector2(topLeft.offsetX, topLeft.offsetY);
-                rectEnd = new Vector2(bottomRight.offsetX, bottomRight.offsetY);
-            }
-            else if (points.TryGetValue("BOTTOMLEFT", out var bottomLeft) && points.TryGetValue("TOPRIGHT", out var topRight))
-            {
-                rectStart = new Vector2(topRight.offsetX, topRight.offsetY);
-                rectEnd = new Vector2(bottomLeft.offsetX, bottomLeft.offsetY);
-            }
-            else if (points.TryGetValue("TOPLEFT", out var topLeft2) && points.TryGetValue("TOPRIGHT", out var topRight2))
-            {
-                rectStart = new Vector2(topLeft2.offsetX, topLeft2.offsetY);
-                rectEnd = new Vector2(topRight2.offsetX, topRight2.offsetY - frame._height);
-            }
-            else if (points.TryGetValue("BOTTOMLEFT", out var bottomLeft2) && points.TryGetValue("BOTTOMRIGHT", out var bottomRight2))
-            {
-                rectStart = new Vector2(bottomLeft2.offsetX, bottomLeft2.offsetY + frame._height);
-                rectEnd = new Vector2(bottomRight2.offsetX, bottomRight2.offsetY);
-            }
-        }
-        
-        return (rectStart, rectEnd);
+        float regionWidth = region._width;
+        float regionHeight = region._height;
+
+        if (left.HasValue && right.HasValue) regionWidth = right.Value - left.Value;
+        if (top.HasValue && bottom.HasValue) regionHeight = bottom.Value - top.Value;
+
+        if (regionWidth <= 0) regionWidth = region._width > 0 ? region._width : parentWidth;
+        if (regionHeight <= 0) regionHeight = region._height > 0 ? region._height : parentHeight;
+
+        float finalX = left ?? (right.HasValue ? right.Value - regionWidth : (centerX.HasValue ? centerX.Value - regionWidth / 2 : parentX));
+        float finalY = top ?? (bottom.HasValue ? bottom.Value - regionHeight : (centerY.HasValue ? centerY.Value - regionHeight / 2 : parentY));
+
+        region._computedX = finalX;
+        region._computedY = finalY;
+        region._computedWidth = regionWidth;
+        region._computedHeight = regionHeight;
+        region._layoutDirty = false;
     }
 
-    private Vector2 CalculateAnchoredPosition(
-        Vector2 referencePos,
-        Vector2 referenceSize,
-        string anchorPoint,
-        string relativePoint,
-        Vector2 offset,
-        Vector2 frameSize)
+    /// <summary>
+    /// Draws a texture region
+    /// </summary>
+    private void DrawTexture(Widgets.Texture texture, ImDrawListPtr drawList, float parentAlpha)
     {
-        // Calculate the reference point on the relative frame
-        Vector2 refPoint = Vector2.Zero;
+        float alpha = texture.GetEffectiveAlpha() * parentAlpha;
+        if (alpha <= 0) return;
 
-        switch (relativePoint.ToUpper())
+        var rectStart = new Vector2(texture._computedX, texture._computedY);
+        var rectEnd = new Vector2(texture._computedX + texture._computedWidth, texture._computedY + texture._computedHeight);
+
+        if (texture.IsColorTexture())
         {
-            case "TOPLEFT":
-                refPoint = referencePos;
-                break;
-            case "TOPRIGHT":
-                refPoint = referencePos + new Vector2(referenceSize.X, 0);
-                break;
-            case "BOTTOMLEFT":
-                refPoint = referencePos + new Vector2(0, referenceSize.Y);
-                break;
-            case "BOTTOMRIGHT":
-                refPoint = referencePos + referenceSize;
-                break;
+            // Solid color texture
+            var (r, g, b, a) = texture.GetColorTextureValues();
+            var color = ImGui.GetColorU32(new Vector4(r, g, b, a * alpha));
+            drawList.AddRectFilled(rectStart, rectEnd, color);
+        }
+        else
+        {
+            // TODO: Image texture rendering
+            // For now, draw a placeholder with vertex color
+            var vertexColor = texture.GetVertexColor();
+            var color = ImGui.GetColorU32(new Vector4(vertexColor[0], vertexColor[1], vertexColor[2], vertexColor[3] * alpha));
+            drawList.AddRectFilled(rectStart, rectEnd, color);
+        }
+    }
+
+    /// <summary>
+    /// Draws a font string region
+    /// </summary>
+    private void DrawFontString(FontString fontString, ImDrawListPtr drawList, float parentAlpha)
+    {
+        var text = fontString.GetText();
+        if (string.IsNullOrEmpty(text)) return;
+
+        float alpha = fontString.GetEffectiveAlpha() * parentAlpha;
+        if (alpha <= 0) return;
+
+        var (r, g, b, a) = fontString.GetTextColor();
+        var color = ImGui.GetColorU32(new Vector4(r, g, b, a * alpha));
+
+        // Calculate text position based on justification
+        var (_, fontSize, _) = fontString.GetFont();
+        var justifyH = fontString.GetJustifyH();
+        var justifyV = fontString.GetJustifyV();
+
+        float textX = fontString._computedX;
+        float textY = fontString._computedY;
+
+        // Horizontal justification
+        var textSize = ImGui.CalcTextSize(text);
+        switch (justifyH.ToUpper())
+        {
             case "CENTER":
-                refPoint = referencePos + (referenceSize / 2);
+                textX = fontString._computedX + (fontString._computedWidth - textSize.X) / 2;
                 break;
-            // Add more cases as needed
-            default:
-                refPoint = referencePos;
+            case "RIGHT":
+                textX = fontString._computedX + fontString._computedWidth - textSize.X;
                 break;
+            // LEFT is default
         }
 
-        // Calculate the anchor point on the current frame
-        Vector2 anchorOffset = Vector2.Zero;
-
-        switch (anchorPoint.ToUpper())
+        // Vertical justification
+        switch (justifyV.ToUpper())
         {
-            case "TOPLEFT":
-                anchorOffset = Vector2.Zero;
+            case "MIDDLE":
+                textY = fontString._computedY + (fontString._computedHeight - textSize.Y) / 2;
                 break;
-            case "TOPRIGHT":
-                anchorOffset = new Vector2(frameSize.X, 0);
+            case "BOTTOM":
+                textY = fontString._computedY + fontString._computedHeight - textSize.Y;
                 break;
-            case "BOTTOMLEFT":
-                anchorOffset = new Vector2(0, frameSize.Y);
-                break;
-            case "BOTTOMRIGHT":
-                anchorOffset = frameSize;
-                break;
-            case "CENTER":
-                anchorOffset = frameSize / 2;
-                break;
-            // Add more cases as needed
-            default:
-                anchorOffset = Vector2.Zero;
-                break;
+            // TOP is default
         }
 
-        // Calculate the final position
-        return refPoint + offset - anchorOffset;
+        drawList.AddText(new Vector2(textX, textY), color, text);
+    }
+
+    /// <summary>
+    /// Draws a line region
+    /// </summary>
+    private void DrawLine(Line line, ImDrawListPtr drawList, float parentAlpha)
+    {
+        float alpha = line.GetEffectiveAlpha() * parentAlpha;
+        if (alpha <= 0) return;
+
+        var vertexColor = line.GetVertexColor();
+        var color = ImGui.GetColorU32(new Vector4(vertexColor[0], vertexColor[1], vertexColor[2], vertexColor[3] * alpha));
+        var thickness = line.GetThickness();
+
+        // Get start and end point data
+        var (startRelPoint, startRelTo, startOffX, startOffY) = line.GetStartPoint();
+        var (endRelPoint, endRelTo, endOffX, endOffY) = line.GetEndPoint();
+
+        // Resolve start position
+        Vector2 startPos;
+        if (startRelPoint != null && startRelTo != null)
+        {
+            // Get the anchor position on the relativeTo frame
+            var (anchorX, anchorY) = GetAnchorPosition(
+                startRelTo._computedX, startRelTo._computedY,
+                startRelTo._computedWidth, startRelTo._computedHeight,
+                startRelPoint.ToUpper());
+            startPos = new Vector2(anchorX + startOffX, anchorY + startOffY);
+        }
+        else if (startRelPoint != null && line._parent is ScriptRegion parentRegion)
+        {
+            // Use parent frame as default relativeTo
+            var (anchorX, anchorY) = GetAnchorPosition(
+                parentRegion._computedX, parentRegion._computedY,
+                parentRegion._computedWidth, parentRegion._computedHeight,
+                startRelPoint.ToUpper());
+            startPos = new Vector2(anchorX + startOffX, anchorY + startOffY);
+        }
+        else
+        {
+            // Fallback to computed position
+            startPos = new Vector2(line._computedX, line._computedY);
+        }
+
+        // Resolve end position
+        Vector2 endPos;
+        if (endRelPoint != null && endRelTo != null)
+        {
+            // Get the anchor position on the relativeTo frame
+            var (anchorX, anchorY) = GetAnchorPosition(
+                endRelTo._computedX, endRelTo._computedY,
+                endRelTo._computedWidth, endRelTo._computedHeight,
+                endRelPoint.ToUpper());
+            endPos = new Vector2(anchorX + endOffX, anchorY + endOffY);
+        }
+        else if (endRelPoint != null && line._parent is ScriptRegion parentRegion)
+        {
+            // Use parent frame as default relativeTo
+            var (anchorX, anchorY) = GetAnchorPosition(
+                parentRegion._computedX, parentRegion._computedY,
+                parentRegion._computedWidth, parentRegion._computedHeight,
+                endRelPoint.ToUpper());
+            endPos = new Vector2(anchorX + endOffX, anchorY + endOffY);
+        }
+        else
+        {
+            // Fallback to bottom-right of computed region
+            endPos = new Vector2(line._computedX + line._computedWidth, line._computedY + line._computedHeight);
+        }
+
+        drawList.AddLine(startPos, endPos, color, thickness);
     }
     
     private void CreateDockingSpaceAndMainMenu()

@@ -63,18 +63,18 @@ public static class EditBox
     public static int internal_SetFont(lua_State L)
     {
         var editBox = GetThis(L, 1);
-        
+
         var argc = lua_gettop(L);
-        if (argc < 5)
+        if (argc < 4)
         {
             Log.ErrorL(L, "SetFont requires exactly 3 arguments: fontFile, height, flags.");
             return 0; // Unreachable
         }
-        
+
         var fontFile = lua_tostring(L, 2);
-        var height = (int)lua_tonumber(L, 3);
+        var height = (float)lua_tonumber(L, 3);
         var flags = lua_tostring(L, 4);
-        
+
         var success = editBox?.SetFont(fontFile, height, flags);
 
         lua_pushboolean(L, success == true ? 1 : 0);

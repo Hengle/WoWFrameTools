@@ -7,10 +7,16 @@ namespace WoWFrameTools.Widgets;
 public class Region : ScriptRegion
 {
     protected string _drawLayer { get; set; }
+    protected int _subLevel { get; set; }
+    protected float _vertexColorR { get; set; } = 1.0f;
+    protected float _vertexColorG { get; set; } = 1.0f;
+    protected float _vertexColorB { get; set; } = 1.0f;
+    protected float _vertexColorA { get; set; } = 1.0f;
 
-    protected Region(string objectType, string? name, string? drawLayer, Region? parent) : base(objectType, name, parent)
+    protected Region(string objectType, string? name, string? drawLayer, Region? parent, int subLevel = 0) : base(objectType, name, parent)
     {
-        _drawLayer = drawLayer ?? "MEDIUM";
+        _drawLayer = drawLayer ?? "ARTWORK";
+        _subLevel = subLevel;
     }
     
     // Region:GetAlpha() : alpha - Returns the region's opacity.
@@ -21,9 +27,9 @@ public class Region : ScriptRegion
     /// Region:GetEffectiveScale() : effectiveScale - Returns the scale of the region after propagating from its parents.
     /// </summary>
     /// <returns></returns>
-    public double GetEffectiveScale()
+    public new float GetEffectiveScale()
     {
-        return 1.0f;
+        return base.GetEffectiveScale();
     }
     
     /// <summary>
@@ -31,9 +37,9 @@ public class Region : ScriptRegion
     /// Region:GetScale() : scale - Returns the scale of the region.
     /// </summary>
     /// <returns></returns>
-    public double GetScale()
+    public new float GetScale()
     {
-        return 1.0f;
+        return _scale;
     }
     
     /// <summary>
@@ -41,9 +47,25 @@ public class Region : ScriptRegion
     /// Region:GetVertexColor() : colorR, colorG, colorB, colorA - Returns the vertex color shading of the region.
     /// </summary>
     /// <returns></returns>
-    public int[] GetVertexColor()
+    public float[] GetVertexColor()
     {
-        return [1, 1, 1, 1];
+        return [_vertexColorR, _vertexColorG, _vertexColorB, _vertexColorA];
+    }
+
+    /// <summary>
+    /// Gets the draw layer for this region
+    /// </summary>
+    public string GetDrawLayer()
+    {
+        return _drawLayer;
+    }
+
+    /// <summary>
+    /// Gets the sublevel within the draw layer
+    /// </summary>
+    public int GetSubLevel()
+    {
+        return _subLevel;
     }
     
     // Region:IsIgnoringParentAlpha() : isIgnoring - Returns true if the region is ignoring parent alpha.
@@ -57,7 +79,16 @@ public class Region : ScriptRegion
     /// <param name="alpha"></param>
     public void SetAlpha(float alpha)
     {
-        
+        _alpha = alpha;
+    }
+
+    /// <summary>
+    /// https://warcraft.wiki.gg/wiki/API_Region_GetAlpha
+    /// Region:GetAlpha() : alpha - Returns the region's opacity.
+    /// </summary>
+    public float GetAlpha()
+    {
+        return _alpha;
     }
     
     // Region:SetDrawLayer(layer [, sublevel]) - Sets the layer in which the region is drawn.
@@ -71,7 +102,8 @@ public class Region : ScriptRegion
     /// <param name="scale"></param>
     public void SetScale(float scale)
     {
-        
+        _scale = scale;
+        InvalidateLayout();
     }
     
     /// <summary>
@@ -84,6 +116,21 @@ public class Region : ScriptRegion
     /// <param name="colorA"></param>
     public void SetVertexColor(float colorR, float colorG, float colorB, float? colorA)
     {
-        
+        _vertexColorR = colorR;
+        _vertexColorG = colorG;
+        _vertexColorB = colorB;
+        _vertexColorA = colorA ?? 1.0f;
+    }
+
+    /// <summary>
+    /// Sets the draw layer for this region
+    /// </summary>
+    public void SetDrawLayer(string layer, int? subLevel = null)
+    {
+        _drawLayer = layer;
+        if (subLevel.HasValue)
+        {
+            _subLevel = subLevel.Value;
+        }
     }
 }

@@ -19,7 +19,7 @@ namespace WoWFrameTools.Widgets
         // ScriptRegionResizing:GetNumPoints() : numPoints - Returns the number of anchor points for the region.
         // ScriptRegionResizing:GetPoint([anchorIndex [, resolveCollapsed]]) : point, relativeTo, relativePoint, offsetX, offsetY #restrictedframe - Returns an anchor point for the region.
         // ScriptRegionResizing:GetPointByName(point [, resolveCollapsed]) : point, relativeTo, relativePoint, offsetX, offsetY - Returns an anchor point by name for the region.
-        void SetAllPoints(Frame? relativeTo = null, bool doResize = true);
+        void SetAllPoints(ScriptRegion? relativeTo = null, bool doResize = true);
         void SetHeight(float height);
         void SetPoint(string point, Frame? relativeTo = null, string? relativePoint = null, float offsetX = 0, float offsetY = 0);
         void SetSize(float x, float y);

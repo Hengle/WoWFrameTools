@@ -14,7 +14,7 @@ public interface IFontInstance
     // FontInstance:GetShadowOffset() : offsetX, offsetY - Returns the text shadow offset.
     // FontInstance:GetSpacing() : spacing - Returns the line spacing.
     // FontInstance:GetTextColor() : colorR, colorG, colorB, colorA - Returns the default text color.
-    bool SetFont(string? fontFile, int height, string? flags);
+    bool SetFont(string? fontFile, float height, string? flags);
     // FontInstance:SetFontObject(font) - Sets the "parent" font object from which this object inherits properties.
     // FontInstance:SetIndentedWordWrap(wordWrap) - Sets the indentation when text wraps beyond the first line.
     void SetJustifyH(string justify);

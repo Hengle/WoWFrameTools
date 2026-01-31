@@ -14,12 +14,63 @@ namespace WoWFrameTools.Widgets
         public float _height { get; set; }
         public float _alpha { get; set; }
         public float _scale { get; set; }
-        private bool _visible;
+        private bool _shown;
         private bool _mouseEnabled;
+
+        // Computed absolute position (top-left corner in screen space)
+        public float _computedX { get; set; }
+        public float _computedY { get; set; }
+        public float _computedWidth { get; set; }
+        public float _computedHeight { get; set; }
+        public bool _layoutDirty { get; set; } = true;
 
         protected ScriptRegion(string objectType, string? name, ScriptRegion? parent) : base(objectType, name, parent)
         {
             _points = [];
+            _alpha = 1.0f;
+            _scale = 1.0f;
+            _shown = true;
+        }
+
+        /// <summary>
+        /// Marks this region and all children as needing layout recalculation
+        /// </summary>
+        public void InvalidateLayout()
+        {
+            _layoutDirty = true;
+            foreach (var child in _children)
+            {
+                if (child is ScriptRegion region)
+                {
+                    region.InvalidateLayout();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Gets the effective alpha considering parent chain
+        /// </summary>
+        public float GetEffectiveAlpha()
+        {
+            float parentAlpha = (_parent as ScriptRegion)?.GetEffectiveAlpha() ?? 1.0f;
+            return _alpha * parentAlpha;
+        }
+
+        /// <summary>
+        /// Gets the effective scale considering parent chain
+        /// </summary>
+        public float GetEffectiveScale()
+        {
+            float parentScale = (_parent as ScriptRegion)?.GetEffectiveScale() ?? 1.0f;
+            return _scale * parentScale;
+        }
+
+        /// <summary>
+        /// Returns true if this region is shown (its own visibility state)
+        /// </summary>
+        public bool IsShown()
+        {
+            return _shown;
         }
         // ScriptRegion:CanChangeProtectedState() : canChange - Returns true if protected properties of the region can be changed by non-secure scripts.
         // ScriptRegion:CollapsesLayout() : collapsesLayout
@@ -66,7 +117,94 @@ namespace WoWFrameTools.Widgets
         {
             return _width;
         }
-        
+
+        /// <summary>
+        /// https://warcraft.wiki.gg/wiki/API_ScriptRegion_GetLeft
+        /// ScriptRegion:GetLeft() : left - Returns the offset to the left edge of the region.
+        /// </summary>
+        /// <returns>The left edge x coordinate</returns>
+        public float GetLeft()
+        {
+            return _computedX;
+        }
+
+        /// <summary>
+        /// https://warcraft.wiki.gg/wiki/API_ScriptRegion_GetRight
+        /// ScriptRegion:GetRight() : right - Returns the offset to the right edge of the region.
+        /// </summary>
+        /// <returns>The right edge x coordinate</returns>
+        public float GetRight()
+        {
+            return _computedX + _computedWidth;
+        }
+
+        /// <summary>
+        /// https://warcraft.wiki.gg/wiki/API_ScriptRegion_GetTop
+        /// ScriptRegion:GetTop() : top - Returns the offset to the top edge of the region.
+        /// </summary>
+        /// <returns>The top edge y coordinate</returns>
+        public float GetTop()
+        {
+            return _computedY;
+        }
+
+        /// <summary>
+        /// https://warcraft.wiki.gg/wiki/API_ScriptRegion_GetBottom
+        /// ScriptRegion:GetBottom() : bottom - Returns the offset to the bottom edge of the region.
+        /// </summary>
+        /// <returns>The bottom edge y coordinate</returns>
+        public float GetBottom()
+        {
+            return _computedY + _computedHeight;
+        }
+
+        /// <summary>
+        /// https://warcraft.wiki.gg/wiki/API_ScriptRegion_GetCenter
+        /// ScriptRegion:GetCenter() : x, y - Returns the offset to the center of the region.
+        /// </summary>
+        /// <returns>The center x and y coordinates</returns>
+        public (float x, float y) GetCenter()
+        {
+            return (_computedX + _computedWidth / 2, _computedY + _computedHeight / 2);
+        }
+
+        /// <summary>
+        /// https://warcraft.wiki.gg/wiki/API_ScriptRegion_GetRect
+        /// ScriptRegion:GetRect() : left, bottom, width, height - Returns the coords and size of the region.
+        /// </summary>
+        /// <returns>The left, bottom, width, and height values</returns>
+        public (float left, float bottom, float width, float height) GetRect()
+        {
+            return (_computedX, _computedY + _computedHeight, _computedWidth, _computedHeight);
+        }
+
+        /// <summary>
+        /// https://warcraft.wiki.gg/wiki/API_ScriptRegion_GetNumPoints
+        /// ScriptRegion:GetNumPoints() : numPoints - Returns the number of anchor points for the region.
+        /// </summary>
+        /// <returns>The number of anchor points</returns>
+        public int GetNumPoints()
+        {
+            return _points.Count;
+        }
+
+        /// <summary>
+        /// https://warcraft.wiki.gg/wiki/API_ScriptRegion_GetPoint
+        /// ScriptRegion:GetPoint(pointNum) : point, relativeTo, relativePoint, offsetX, offsetY - Returns an anchor point for the region.
+        /// </summary>
+        /// <param name="pointNum">1-based index of the point</param>
+        /// <returns>The anchor point info, or null if not found</returns>
+        public (string point, ScriptRegion? relativeTo, string? relativePoint, float offsetX, float offsetY)? GetPoint(int pointNum)
+        {
+            if (pointNum < 1 || pointNum > _points.Count) return null;
+
+            var keys = _points.Keys.ToList();
+            var key = keys[pointNum - 1];
+            var point = _points[key];
+
+            return (point.point, point.relativeTo, point.relativePoint, point.offsetX, point.offsetY);
+        }
+
         /// <summary>
         /// https://warcraft.wiki.gg/wiki/API_ScriptRegion_Hide
         /// ScriptRegion:Hide() #secureframe - Hides the region.
@@ -74,13 +212,13 @@ namespace WoWFrameTools.Widgets
         [Attributes.SecureFrame]
         public void Hide()
         {
-            if (_visible)
+            if (_shown)
             {
-                _visible = false;
-                
+                _shown = false;
+
                 // Fire OnHide event
                 OnHide();
-                
+
                 // TODO : Pause OnUpdate script
             }
         }
@@ -102,7 +240,12 @@ namespace WoWFrameTools.Widgets
         // ScriptRegion:IsVisible() : isVisible - Returns true if the region and its parents are shown.
         public bool IsVisible()
         {
-            return _visible;
+            if (!_shown) return false;
+            if (_parent is ScriptRegion parentRegion)
+            {
+                return parentRegion.IsVisible();
+            }
+            return true;
         }
         
         // ScriptRegion:SetMouseClickEnabled([enabled]) - Sets whether the region should receive mouse clicks.
@@ -145,10 +288,10 @@ namespace WoWFrameTools.Widgets
         [Attributes.SecureFrame]
         public void Show()
         {
-            if (!_visible)
+            if (!_shown)
             {
-                _visible = true;
-                
+                _shown = true;
+
                 // Fire OnShow script
                 OnShow();
                 // TODO : Resume OnUpdate script
@@ -166,6 +309,7 @@ namespace WoWFrameTools.Widgets
         public void ClearAllPoints()
         {
             _points.Clear();
+            InvalidateLayout();
         }
         
         // ScriptRegionResizing:ClearPoint(point) - Removes an anchor point from the region by name.
@@ -180,9 +324,26 @@ namespace WoWFrameTools.Widgets
         /// </summary>
         /// <param name="relativeTo"></param>
         /// <param name="doResize"></param>
-        public void SetAllPoints(Frame? relativeTo = null, bool doResize = true)
+        public void SetAllPoints(ScriptRegion? relativeTo = null, bool doResize = true)
         {
-            
+            ClearAllPoints();
+
+            // Default to parent if no relativeTo specified
+            var target = relativeTo ?? _parent as ScriptRegion;
+            if (target == null) return;
+
+            // Anchor top-left and bottom-right to fill the target frame
+            SetPoint("TOPLEFT", target as Frame, "TOPLEFT", 0, 0);
+            SetPoint("BOTTOMRIGHT", target as Frame, "BOTTOMRIGHT", 0, 0);
+
+            if (doResize)
+            {
+                // When resizing, match the target's explicit size if it has one
+                if (target._width > 0) _width = target._width;
+                if (target._height > 0) _height = target._height;
+            }
+
+            InvalidateLayout();
         }
         
         /// <summary>
@@ -193,6 +354,7 @@ namespace WoWFrameTools.Widgets
         public void SetHeight(float height)
         {
             _height = height;
+            InvalidateLayout();
         }
         
         /// <summary>
@@ -208,6 +370,7 @@ namespace WoWFrameTools.Widgets
         {
             _points.Remove(point);
             _points.Add(point, new Point(point, relativeTo, relativePoint, offsetX, offsetY));
+            InvalidateLayout();
         }
         
         /// <summary>
@@ -220,6 +383,7 @@ namespace WoWFrameTools.Widgets
         {
             _width = width;
             _height = height;
+            InvalidateLayout();
         }
         
         /// <summary>
@@ -230,6 +394,7 @@ namespace WoWFrameTools.Widgets
         public void SetWidth(float width)
         {
             _width = width;
+            InvalidateLayout();
         }
     }
 }

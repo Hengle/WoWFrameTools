@@ -131,7 +131,7 @@ public class EditBox : Frame, IFontInstance
     /// <param name="height"></param>
     /// <param name="flags"></param>
     /// <returns></returns>
-    public bool SetFont(string? fontFile, int height, string? flags)
+    public bool SetFont(string? fontFile, float height, string? flags)
     {
         return true;
     }

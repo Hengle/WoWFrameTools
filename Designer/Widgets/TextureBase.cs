@@ -6,10 +6,57 @@ namespace WoWFrameTools.Widgets;
 
 public class TextureBase : Region
 {
+    // Texture data
+    protected string? _texturePath { get; set; }
+    protected int _textureFileID { get; set; }
+    protected bool _isColorTexture { get; set; }
+    protected float _colorR { get; set; }
+    protected float _colorG { get; set; }
+    protected float _colorB { get; set; }
+    protected float _colorA { get; set; } = 1.0f;
+
+    // Texture coordinates (UV mapping)
+    protected float _texCoordLeft { get; set; } = 0f;
+    protected float _texCoordRight { get; set; } = 1f;
+    protected float _texCoordTop { get; set; } = 0f;
+    protected float _texCoordBottom { get; set; } = 1f;
+
+    // Rotation
+    protected float _rotation { get; set; }
+    protected string? _rotationPoint { get; set; }
+
+    // Blend mode
+    protected string _blendMode { get; set; } = "BLEND";
+
     protected TextureBase(string objectType, string? name, string? drawLayer, string? templateName, int subLevel, Frame? parent)
-        : base(objectType, name, drawLayer, parent)
+        : base(objectType, name, drawLayer, parent, subLevel)
     {
     }
+
+    /// <summary>
+    /// Gets the texture path if set
+    /// </summary>
+    public string? GetTexturePath() => _texturePath;
+
+    /// <summary>
+    /// Returns true if this is a solid color texture
+    /// </summary>
+    public bool IsColorTexture() => _isColorTexture;
+
+    /// <summary>
+    /// Gets the solid color values (for color textures)
+    /// </summary>
+    public (float r, float g, float b, float a) GetColorTextureValues() => (_colorR, _colorG, _colorB, _colorA);
+
+    /// <summary>
+    /// Gets the texture coordinates
+    /// </summary>
+    public (float left, float right, float top, float bottom) GetTexCoords() => (_texCoordLeft, _texCoordRight, _texCoordTop, _texCoordBottom);
+
+    /// <summary>
+    /// Gets the blend mode
+    /// </summary>
+    public string GetBlendMode() => _blendMode;
     // TextureBase:ClearTextureSlice()
     // TextureBase:GetAtlas() : atlas - Returns the atlas for the texture.
     // TextureBase:GetBlendMode() : blendMode - Returns the blend mode of the texture.
@@ -40,8 +87,24 @@ public class TextureBase : Region
     /// <param name="colorG"></param>
     /// <param name="colorB"></param>
     /// <param name="colorA"></param>
-    public void SetColorTexture(float colorR, float colorG, float colorB, float colorA)
+    public void SetColorTexture(float colorR, float colorG, float colorB, float colorA = 1.0f)
     {
+        _isColorTexture = true;
+        _colorR = colorR;
+        _colorG = colorG;
+        _colorB = colorB;
+        _colorA = colorA;
+        _texturePath = null;
+        _textureFileID = 0;
+    }
+
+    /// <summary>
+    /// https://warcraft.wiki.gg/wiki/API_TextureBase_SetBlendMode
+    /// TextureBase:SetBlendMode(blendMode) - Sets the blend mode of the texture.
+    /// </summary>
+    public void SetBlendMode(string blendMode)
+    {
+        _blendMode = blendMode;
     }
     
     // TextureBase:SetDesaturated([desaturated]) - Sets the texture to be desaturated.
@@ -58,7 +121,8 @@ public class TextureBase : Region
     /// <param name="normalizedRotationPoint"></param>
     public void SetRotation(float radians, string? normalizedRotationPoint)
     {
-        
+        _rotation = radians;
+        _rotationPoint = normalizedRotationPoint;
     }
     
     // TextureBase:SetSnapToPixelGrid([snap]) - Sets the texture to snap to the pixel grid.
@@ -73,7 +137,10 @@ public class TextureBase : Region
     /// <param name="bottom"></param>
     public void SetTexCoord(float left, float right, float top, float bottom)
     {
-
+        _texCoordLeft = left;
+        _texCoordRight = right;
+        _texCoordTop = top;
+        _texCoordBottom = bottom;
     }
     /// <summary>
     /// https://warcraft.wiki.gg/wiki/API_TextureBase_SetTexCoord
@@ -89,7 +156,12 @@ public class TextureBase : Region
     /// <param name="lRy"></param>
     public void SetTexCoord(float uLx, float uLy, float lLx, float lLy, float uRx, float uRy, float lRx, float lRy)
     {
- 
+        // 8-parameter version for arbitrary quad mapping
+        // For simple cases, convert to left/right/top/bottom
+        _texCoordLeft = Math.Min(uLx, lLx);
+        _texCoordRight = Math.Max(uRx, lRx);
+        _texCoordTop = Math.Min(uLy, uRy);
+        _texCoordBottom = Math.Max(lLy, lRy);
     }
     
     // TextureBase:SetTexelSnappingBias(bias) - Returns the texel snapping bias for the texture.
@@ -104,8 +176,11 @@ public class TextureBase : Region
     /// <param name="filterMode"></param>
     public void SetTexture(int fileID, string? wrapModeHorizontal, string? wrapModeVertical, string? filterMode)
     {
-
+        _textureFileID = fileID;
+        _texturePath = null;
+        _isColorTexture = false;
     }
+
     /// <summary>
     /// https://warcraft.wiki.gg/wiki/API_TextureBase_SetTexture
     /// TextureBase:SetTexture([textureAsset [, wrapModeHorizontal [, wrapModeVertical [, filterMode]]]]) - Sets the texture to an image.
@@ -116,7 +191,9 @@ public class TextureBase : Region
     /// <param name="filterMode"></param>
     public void SetTexture(string? filePath, string? wrapModeHorizontal, string? wrapModeVertical, string? filterMode)
     {
-
+        _texturePath = filePath;
+        _textureFileID = 0;
+        _isColorTexture = false;
     }
     
     // TextureBase:SetTextureSliceMargins(left, top, right, bottom)

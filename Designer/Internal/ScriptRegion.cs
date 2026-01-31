@@ -35,12 +35,136 @@ public static class ScriptRegion
     public static int internal_GetWidth(lua_State L)
     {
         var frame = GetThis(L, 1);
-        var height = frame?.GetWidth() ?? 0;
+        var width = frame?.GetWidth() ?? 0;
 
-        lua_pushnumber(L, height);
+        lua_pushnumber(L, width);
         return 1;
     }
-    
+
+    public static int internal_GetLeft(lua_State L)
+    {
+        var frame = GetThis(L, 1);
+        var left = frame?.GetLeft() ?? 0;
+
+        lua_pushnumber(L, left);
+        return 1;
+    }
+
+    public static int internal_GetRight(lua_State L)
+    {
+        var frame = GetThis(L, 1);
+        var right = frame?.GetRight() ?? 0;
+
+        lua_pushnumber(L, right);
+        return 1;
+    }
+
+    public static int internal_GetTop(lua_State L)
+    {
+        var frame = GetThis(L, 1);
+        var top = frame?.GetTop() ?? 0;
+
+        lua_pushnumber(L, top);
+        return 1;
+    }
+
+    public static int internal_GetBottom(lua_State L)
+    {
+        var frame = GetThis(L, 1);
+        var bottom = frame?.GetBottom() ?? 0;
+
+        lua_pushnumber(L, bottom);
+        return 1;
+    }
+
+    public static int internal_GetCenter(lua_State L)
+    {
+        var frame = GetThis(L, 1);
+        if (frame == null)
+        {
+            lua_pushnil(L);
+            lua_pushnil(L);
+            return 2;
+        }
+
+        var (x, y) = frame.GetCenter();
+        lua_pushnumber(L, x);
+        lua_pushnumber(L, y);
+        return 2;
+    }
+
+    public static int internal_GetRect(lua_State L)
+    {
+        var frame = GetThis(L, 1);
+        if (frame == null)
+        {
+            lua_pushnil(L);
+            lua_pushnil(L);
+            lua_pushnil(L);
+            lua_pushnil(L);
+            return 4;
+        }
+
+        var (left, bottom, width, height) = frame.GetRect();
+        lua_pushnumber(L, left);
+        lua_pushnumber(L, bottom);
+        lua_pushnumber(L, width);
+        lua_pushnumber(L, height);
+        return 4;
+    }
+
+    public static int internal_GetNumPoints(lua_State L)
+    {
+        var frame = GetThis(L, 1);
+        var numPoints = frame?.GetNumPoints() ?? 0;
+
+        lua_pushnumber(L, numPoints);
+        return 1;
+    }
+
+    public static int internal_GetPoint(lua_State L)
+    {
+        var frame = GetThis(L, 1);
+        if (frame == null)
+        {
+            lua_pushnil(L);
+            return 1;
+        }
+
+        var pointNum = (int)luaL_checknumber(L, 2);
+        var pointInfo = frame.GetPoint(pointNum);
+
+        if (pointInfo == null)
+        {
+            lua_pushnil(L);
+            return 1;
+        }
+
+        var (point, relativeTo, relativePoint, offsetX, offsetY) = pointInfo.Value;
+
+        lua_pushstring(L, point);
+
+        if (relativeTo != null && relativeTo is Widgets.ScriptObject scriptObj)
+        {
+            // Push the relativeTo frame's Lua table
+            LuaHelpers.PushExistingFrameToLua(L, scriptObj);
+        }
+        else
+        {
+            lua_pushnil(L);
+        }
+
+        if (relativePoint != null)
+            lua_pushstring(L, relativePoint);
+        else
+            lua_pushnil(L);
+
+        lua_pushnumber(L, offsetX);
+        lua_pushnumber(L, offsetY);
+
+        return 5;
+    }
+
     public static int internal_Hide(lua_State L)
     {
         var frame = GetThis(L, 1);
@@ -91,12 +215,13 @@ public static class ScriptRegion
         }
 
         // Retrieve arguments: relativeTo (optional), doResize (optional)
-        Widgets.Frame? relativeTo = null;
-        var doResize = false;
+        Widgets.ScriptRegion? relativeTo = null;
+        var doResize = true;
 
-        if (lua_gettop(L) >= 2 && lua_isnil(L, 2) != 0)
+        // Check if arg 2 is a frame (not nil)
+        if (lua_gettop(L) >= 2 && lua_isnil(L, 2) == 0)
         {
-            relativeTo = GetThis(L, 2) as Widgets.Frame;
+            relativeTo = GetThis(L, 2);
         }
 
         if (lua_gettop(L) >= 3) doResize = lua_toboolean(L, 3) != 0;
@@ -280,6 +405,14 @@ public static class ScriptRegion
         LuaHelpers.RegisterMethod(L, "SetParent", Internal.ScriptRegion.internal_SetParent);
         LuaHelpers.RegisterMethod(L, "GetHeight", Internal.ScriptRegion.internal_GetHeight);
         LuaHelpers.RegisterMethod(L, "GetWidth", Internal.ScriptRegion.internal_GetWidth);
+        LuaHelpers.RegisterMethod(L, "GetLeft", Internal.ScriptRegion.internal_GetLeft);
+        LuaHelpers.RegisterMethod(L, "GetRight", Internal.ScriptRegion.internal_GetRight);
+        LuaHelpers.RegisterMethod(L, "GetTop", Internal.ScriptRegion.internal_GetTop);
+        LuaHelpers.RegisterMethod(L, "GetBottom", Internal.ScriptRegion.internal_GetBottom);
+        LuaHelpers.RegisterMethod(L, "GetCenter", Internal.ScriptRegion.internal_GetCenter);
+        LuaHelpers.RegisterMethod(L, "GetRect", Internal.ScriptRegion.internal_GetRect);
+        LuaHelpers.RegisterMethod(L, "GetNumPoints", Internal.ScriptRegion.internal_GetNumPoints);
+        LuaHelpers.RegisterMethod(L, "GetPoint", Internal.ScriptRegion.internal_GetPoint);
         LuaHelpers.RegisterMethod(L, "IsVisible", Internal.ScriptRegion.internal_IsVisible);
 
         // IScriptRegionResizing

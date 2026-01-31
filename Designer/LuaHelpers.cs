@@ -310,9 +310,11 @@ public static class LuaHelpers
     }
 
     /// <summary>
-    /// Pushes a given FrameScriptObject-derived instance onto the Lua stack 
-    /// as a userdata, setting the appropriate metatable from obj.GetMetatableName().
-    /// 
+    /// Pushes a given FrameScriptObject-derived instance onto the Lua stack.
+    /// If the object has a LuaRegistryRef (i.e., it was created via CreateFrame),
+    /// returns the existing Lua table to preserve custom properties set by addon code.
+    /// Otherwise, creates a new userdata with the appropriate metatable.
+    ///
     /// If obj is null, pushes nil.
     /// </summary>
     public static void PushFrameScriptObject(lua_State L, FrameScriptObject? obj)
@@ -324,32 +326,31 @@ public static class LuaHelpers
             return;
         }
 
-        // 2) Allocate a GCHandle to pin 'obj'
+        // 2) If the object has a registry reference, return the existing Lua table
+        // This preserves custom properties set by addon code (e.g., button.dataObject)
+        if (obj is Widgets.ScriptObject scriptObj && scriptObj.LuaRegistryRef > 0)
+        {
+            lua_rawgeti(L, LUA_REGISTRYINDEX, scriptObj.LuaRegistryRef);
+            return;
+        }
+
+        // 3) Fallback: create new userdata for objects without registry ref
+        // Allocate a GCHandle to pin 'obj'
         GCHandle handle = GCHandle.Alloc(obj);
         IntPtr handlePtr = GCHandle.ToIntPtr(handle);
 
-        // 3) Create a new userdata block large enough for IntPtr
-        // In Lua 5.1, we can do: 
+        // Create a new userdata block large enough for IntPtr
         IntPtr userdataPtr = (IntPtr)lua_newuserdata(L, (UIntPtr)IntPtr.Size);
 
-        // 4) Write the handle pointer into that memory
+        // Write the handle pointer into that memory
         Marshal.WriteIntPtr(userdataPtr, handlePtr);
 
-        // 5) Retrieve the class-specific metatable name, e.g. "UIObjectMetaTable" or "ScriptRegionMetaTable"
+        // Retrieve the class-specific metatable name
         string metaName = Internal.FrameScriptObject.GetMetatableName();
 
-        // 6) Get that metatable
+        // Get that metatable and set it
         luaL_getmetatable(L, metaName);
-
-        // 7) Set it as the userdata's metatable
-        // stack: [ ..., userData, metaTable ]
         lua_setmetatable(L, -2);
-        // stack: [ ..., userData ]
-
-        // Done! userData with the correct metatable is on top of the stack
-        // The caller can now do e.g. 
-        // local scriptObj = ...  -- from C# code
-        // scriptObj:GetName() in Lua, etc.
     }
 
     /// <summary>
